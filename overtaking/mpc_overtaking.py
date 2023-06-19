@@ -44,7 +44,7 @@ class MPC(object):
         
         # cost matrix for tracking the goal point
         self._Q_goal = np.diag([
-            10, 10,  # delta_x, delta_y 100 100
+            100, 100,  # delta_x, delta_y 100 100
             10, # delta_phi 10
             10, 10, # delta_vx delta_vy
             1]) # delta_omega
@@ -150,7 +150,7 @@ class MPC(object):
         g_max = [0 for _ in range(self._s_dim)]
 
         #P = ca.SX.sym("P", self._s_dim+(self._s_dim+3)*self._N+self._s_dim)
-        self.P = ca.SX.sym("P", self._s_dim+self._s_dim)
+        self.P = ca.SX.sym("P", self._s_dim+2+self._s_dim)
         self.X = ca.SX.sym("X", self._s_dim, self._N+1)
         self.U = ca.SX.sym("U", self._u_dim, self._N)
         #
@@ -183,7 +183,7 @@ class MPC(object):
             cost_goal_k = 0
             # The goal postion.
 
-            delta_s_k = (self.X[:, k+1] - self.P[self._s_dim:])
+            delta_s_k = (self.X[:, k+1] - self.P[self._s_dim+2:])
             cost_goal_k = f_cost_goal(delta_s_k)
             
             if k == 0:
@@ -208,6 +208,11 @@ class MPC(object):
             self.nlp_g += [X_next[:, k] - self.X[:, k+1]]
             self.lbg += g_min
             self.ubg += g_max
+
+            dist = np.sqrt((self.X[0, k+1]-self.P[self._s_dim])**2 + (self.X[1, k+1]-self.P[self._s_dim+1])**2)
+            self.nlp_g += [dist]
+            self.lbg += [self.vehicle.length]
+            self.ubg += [np.inf]
 
             # nlp objective
         self.nlp_dict = {'f': self.mpc_obj, 
@@ -247,38 +252,19 @@ class MPC(object):
             "print_time": False
         }
         
+        self.solver = ca.nlpsol("solver", "ipopt", self.nlp_dict, self.ipopt_options)
+        
         # self.solver = ca.nlpsol("solver", "ipopt", nlp_dict, ipopt_options)
         # # jit (just-in-time compilation)
         # print("Generating shared library........")
         # cname = self.solver.generate_dependencies("mpc_v1.c")  
         # system('gcc -fPIC -shared -O3 ' + cname + ' -o ' + self.so_path) # -O3
 
-    def _initConstraints(self,surr_vehicle_pos):
-        nlp_g = self.nlp_g
-        lbg = self.lbg 
-        ubg =   self.ubg 
-
-        for k in range(self._N):
-            dist = (self.X[0, k+1]-surr_vehicle_pos[0])**2 + (self.X[1, k+1]-surr_vehicle_pos[1])**2
-            nlp_g += [dist]
-
-            lbg += [self.vehicle.length**2]
-            ubg += [np.inf]
-
-        nlp_dict = {'f': self.mpc_obj, 
-            'x': ca.vertcat(*self.nlp_w), 
-            'p': self.P,               
-            'g': ca.vertcat(*nlp_g) }
-
-        return nlp_dict, lbg, ubg      
-
-    def solve(self, ref_states, surr_vehicle_pos):
+    def solve(self, ref_states):
         
-        nlp_dict, lbg, ubg   = self._initConstraints(surr_vehicle_pos)
+        #nlp_dict, lbg, ubg   = self._initConstraints(surr_vehicle_pos)
         # # reload compiled mpc
         #print(self.so_path)
-        
-        self.solver = ca.nlpsol("solver", "ipopt", nlp_dict, self.ipopt_options)
 
         # # # # # # # # # # # # # # # #
         # -------- solve NLP ---------
@@ -289,8 +275,8 @@ class MPC(object):
             lbx=self.lbw, 
             ubx=self.ubw, 
             p=ref_states, 
-            lbg=lbg, 
-            ubg=ubg)
+            lbg=self.lbg, 
+            ubg=self.ubg)
         #
         sol_x0 = self.sol['x'].full()
         opt_u = sol_x0[self._s_dim:self._s_dim+self._u_dim]

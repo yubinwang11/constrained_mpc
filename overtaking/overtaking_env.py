@@ -37,8 +37,8 @@ class OvertakingEnv(object):
         self.world_size = 30
         self.lane_len = 6
         self.surr_v_pos = [0,-self.lane_len/2]
-        self.surr_v_vel = 2
-        self.surr_v_state = self.surr_v_pos.append(self.surr_v_vel)
+        #self.surr_v_vel = 2
+        #self.surr_v_state = self.surr_v_pos.append(self.surr_v_vel)
 
 
         # parameters
@@ -78,10 +78,14 @@ class OvertakingEnv(object):
         self.t = 0
         # state for ODE
         self.vehicle_state = self.vehicle.reset(self.vehicle_init_pos, self.vehicle_init_vx)
+
+        self.surr_v_vel = 2
         #if init_vel is not None:
             #self.ball_state = self.ball.reset(init_vel)
         #else:
             #self.ball_state = self.ball.reset(self.ball_init_vel)
+        self.goal  = goal.tolist()
+
         if goal is not None:
             vehicle_obs = goal
         else:
@@ -111,10 +115,10 @@ class OvertakingEnv(object):
         #quad_s0[6:8] = quad_state[3:5]
         #quad_s0 = quad_s0.tolist()
         
-        ref_traj = vehicle_state + goal_state
+        ref_traj = vehicle_state + self.surr_v_pos + self.goal #goal_state
         # ------------------------------------------------------------
         # run  model predictive control
-        _act, pred_traj = self.mpc.solve(ref_traj,self.surr_v_pos)
+        _act, pred_traj = self.mpc.solve(ref_traj)
         #print(len(pred_traj[0]))
         # ------------------------------------------------------------
         # back to world frame
